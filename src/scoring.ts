@@ -29,7 +29,9 @@ function computeFinalScore(s: ScoreResult): number {
 }
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? '';
-const GEMINI_MODEL = 'gemini-2.0-flash'; // ganti sesuai model yang tersedia saat implementasi
+// Urutan fallback — divalidasi 22 Sep 2026: gemini-2.0-flash sudah di-404 ("no
+// longer available"); 3.6-flash sempat 503 high-demand. Cicil dari atas.
+const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-flash-latest', 'gemini-2.5-flash'] as const;
 
 function buildPrompt(item: RawItem, niche: string, strict: boolean): string {
   const base = `Niche: "${niche}"\nJudul: "${item.title}"\nCuplikan: "${item.snippet}"\n\nNilai item ini untuk brief riset tren harian.`;
@@ -38,21 +40,29 @@ function buildPrompt(item: RawItem, niche: string, strict: boolean): string {
 }
 
 async function callGeminiJson(prompt: string): Promise<unknown> {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json' },
-      }),
-    },
-  );
-  if (!res.ok) throw new Error(`Gemini error ${res.status}`);
-  const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-  return JSON.parse(text);
+  let lastErr: unknown;
+  for (const model of GEMINI_MODELS) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: 'application/json' },
+          }),
+        },
+      );
+      if (!res.ok) throw new Error(`Gemini error ${res.status} (${model})`);
+      const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      return JSON.parse(text);
+    } catch (err) {
+      lastErr = err; // coba model fallback berikutnya
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('semua model Gemini gagal');
 }
 
 async function scoreOneItem(item: RawItem, niche: string): Promise<ScoreResult | null> {

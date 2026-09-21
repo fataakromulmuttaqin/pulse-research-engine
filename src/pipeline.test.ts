@@ -58,3 +58,28 @@ describe('runResearch', () => {
     expect(slow?.status).toBe('failed');
   });
 });
+
+// === Fase 0.5: parse yt-dlp keyless lane (tanpa call asli / tanpa API key) ===
+import { parseYtdlpStdout } from './lanes/ytdlp';
+
+describe('parseYtdlpStdout', () => {
+  it('mem-parse JSON per baris, skip baris noise, dan memetakan view_count', () => {
+    const stdout = [
+      '[download] getting 3 results', // noise → skip
+      JSON.stringify({ title: 'Review X', id: 'abc123', channel: 'Chan', view_count: 1234 }),
+      'warning: something',           // noise → skip
+      JSON.stringify({ title: 'Tanpa channel', url: 'https://youtu.be/xyz' }),
+      'bukan json{{{',                // JSON invalid → skip, tidak crash
+      JSON.stringify({ no_title: true }), // tanpa title → skip
+    ].join('\n');
+    const items = parseYtdlpStdout(stdout);
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ title: 'Review X', id: 'abc123', source: 'youtube' });
+    expect(items[0].snippet).toContain('1234 views');
+    expect(items[1]).toMatchObject({ url: 'https://youtu.be/xyz' });
+  });
+
+  it('stdout kosong → array kosong (lane yang melempar error sendiri)', () => {
+    expect(parseYtdlpStdout('')).toHaveLength(0);
+  });
+});
