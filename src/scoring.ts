@@ -65,6 +65,11 @@ async function callGeminiJson(prompt: string): Promise<unknown> {
   throw lastErr instanceof Error ? lastErr : new Error('semua model Gemini gagal');
 }
 
+/** Diekspor untuk judge.ts (fallback Gemini): teks JSON apa pun dari model terbaik yang merespons. */
+export function callGeminiJudge(prompt: string): Promise<unknown> {
+  return callGeminiJson(prompt);
+}
+
 async function scoreOneItem(item: RawItem, niche: string): Promise<ScoreResult | null> {
   for (const strict of [false, true]) {
     try {
